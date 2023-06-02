@@ -2,66 +2,81 @@ package main
 
 import (
 	"context"
-
-	"gomongo/models"
-	"log"
+	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
+type ProductModel struct {
+	ID    string  `json:"_id" bson:"_id"`
+	Name  string  `json:"name" bson:"name"`
+	Price float64 `json:"price" bson:"price"`
+}
+
 func main() {
-	route := gin.Default()
-	client, err := loadMongoConfig()
+	r := gin.Default()
+	client, err := loadMongodbConfig()
 	if err != nil {
-		log.Fatal(err)
+		panic(err.Error())
 	}
+	//connect to mongodb client
+	db := client.Database("test")
+	col := db.Collection("products")
+	//creata a gateway for get
+	//get all products from mongodb with criteria (filter)
+	//all produts return from mongodb is a cursor ([element])
+	//delcare variable to retrieve that
+	r.GET("/products", func(ctx *gin.Context) {
+		var filter = bson.M{}
+		var products []ProductModel
 
-	pImpl := models.NewClassProduct(client)
-	//Classic rest POST, GET, PUT, DELETE
-	route.GET("/", func(c *gin.Context) {
-		c.JSON(200, gin.H{
-			"message": "Hello World",
-		})
-	})
-	route.GET("/products", func(c *gin.Context) {
-		p := &models.ProductModel{
-			ID:    primitive.NewObjectID().Hex(),
-			Name:  "Khe",
-			Price: 4352222,
-		}
-		if err != nil {
+		cur, err := col.Find(context.Background(), filter)
 
-			log.Fatal(err.Error())
-		}
-		res, err := pImpl.CreateProduct(p)
-		if err != nil {
-			c.JSON(500, gin.H{
+		if err = cur.All(context.Background(), &products); err != nil {
+			ctx.JSON(http.StatusBadRequest, bson.M{
 				"message": err.Error(),
 			})
 			return
 		}
-		c.JSON(200, gin.H{
-
-			"message": res,
+		ctx.JSON(http.StatusOK, bson.M{
+			"data":    products,
+			"message": "success",
 		})
 
 	})
-	route.Run(":6969")
+
+	r.POST("/product/add", func(ctx *gin.Context) {
+		var product ProductModel
+		ctx.BindJSON(&product)
+		product.ID = primitive.NewObjectID().Hex()
+		res, err := col.InsertOne(context.Background(), &product)
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, bson.M{
+				"message": err.Error(),
+			})
+			return
+		}
+
+		ctx.JSON(http.StatusOK, bson.M{
+			"data":    res.InsertedID,
+			"message": "success",
+		})
+
+	})
+	r.Run(":6969")
 
 }
 
-func loadMongoConfig() (*mongo.Client, error) {
-	clientOptions := options.Client().ApplyURI("mongodb://localhost:27017")
-	client, err := mongo.Connect(context.Background(), clientOptions)
+func loadMongodbConfig() (*mongo.Client, error) {
+
+	client, err := mongo.Connect(context.Background(), options.Client().ApplyURI("mongodb://localhost:27017"))
 	if err != nil {
 		return nil, err
 	}
-	err = client.Ping(context.Background(), nil)
-	if err != nil {
-		return nil, err
-	}
+
 	return client, nil
 }
