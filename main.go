@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"gomongo/routes"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -19,54 +20,22 @@ type ProductModel struct {
 
 func main() {
 	r := gin.Default()
+	//allow origin
+	r.Use(func(c *gin.Context) {
+		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
+		c.Next()
+	})
 	client, err := loadMongodbConfig()
 	if err != nil {
 		panic(err.Error())
 	}
 	//connect to mongodb client
 	db := client.Database("test")
-	col := db.Collection("products")
 	//creata a gateway for get
 	//get all products from mongodb with criteria (filter)
 	//all produts return from mongodb is a cursor ([element])
 	//delcare variable to retrieve that
-	r.GET("/products", func(ctx *gin.Context) {
-		var filter = bson.M{}
-		var products []ProductModel
-
-		cur, err := col.Find(context.Background(), filter)
-
-		if err = cur.All(context.Background(), &products); err != nil {
-			ctx.JSON(http.StatusBadRequest, bson.M{
-				"message": err.Error(),
-			})
-			return
-		}
-		ctx.JSON(http.StatusOK, bson.M{
-			"data":    products,
-			"message": "success",
-		})
-
-	})
-
-	r.POST("/product/add", func(ctx *gin.Context) {
-		var product ProductModel
-		ctx.BindJSON(&product)
-		product.ID = primitive.NewObjectID().Hex()
-		res, err := col.InsertOne(context.Background(), &product)
-		if err != nil {
-			ctx.JSON(http.StatusBadRequest, bson.M{
-				"message": err.Error(),
-			})
-			return
-		}
-
-		ctx.JSON(http.StatusOK, bson.M{
-			"data":    res.InsertedID,
-			"message": "success",
-		})
-
-	})
+	routes.ProductRoutes(r, db, client)
 	r.Run(":6969")
 
 }
